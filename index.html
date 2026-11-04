@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>廣告成效儀表板</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Manrope', '"Noto Sans TC"', '"PingFang TC"', '"Microsoft JhengHei"', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    :root {
+      --paper: #F4F6F9;
+      --surface: #FFFFFF;
+      --ink: #16213E;
+      --muted: #667085;
+      --line: #E3E7ED;
+      --soft: #EEF1F6;
+      --meta: #3E5BD8;
+      --google: #129C79;
+      --roas: #E2620F;
+      --good: #10805B;
+      --bad: #C2410C;
+      --hero: #16213E;
+      --hero-ink: #FFFFFF;
+      --hero-muted: #A9B3CC;
+      --hero-line: rgba(255, 255, 255, .12);
+      --hero-good: #6EE7B7;
+      --hero-bad: #FDBA74;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #0D1322;
+        --surface: #141B2E;
+        --ink: #E6E9F2;
+        --muted: #97A1B7;
+        --line: #252F48;
+        --soft: #1B2440;
+        --meta: #7D94F6;
+        --google: #3CCB9F;
+        --roas: #FF8E4F;
+        --good: #4ADE9B;
+        --bad: #FB8E5E;
+        --hero: #1D2949;
+        --hero-ink: #FFFFFF;
+        --hero-muted: #A9B3CC;
+        --hero-line: rgba(255, 255, 255, .10);
+        color-scheme: dark;
+      }
+    }
+
+    html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font-feature-settings: "tnum" 1;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+      -webkit-font-smoothing: antialiased;
+    }
+    .surface { background: var(--surface); border: 1px solid var(--line); }
+    .muted { color: var(--muted); }
+    .hairline { border-color: var(--line); }
+
+    /* 分段切換按鈕 */
+    .seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; background: var(--soft); }
+    .seg button {
+      padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      color: var(--muted); white-space: nowrap; transition: background .15s, color .15s;
+    }
+    .seg button:hover { color: var(--ink); }
+    .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(16, 24, 40, .08), 0 0 0 1px var(--line); }
+
+    /* 層級切換 */
+    .level-tab {
+      position: relative; padding: 14px 4px 12px; font-weight: 700; font-size: 15px;
+      color: var(--muted); white-space: nowrap; display: flex; align-items: baseline; gap: 8px;
+    }
+    .level-tab:hover { color: var(--ink); }
+    .level-tab .count { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--soft); padding: 1px 7px; border-radius: 999px; }
+    .level-tab[aria-selected="true"] { color: var(--ink); }
+    .level-tab[aria-selected="true"]::after {
+      content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--ink);
+    }
+
+    button:focus-visible, input:focus-visible, a:focus-visible {
+      outline: 2px solid var(--meta); outline-offset: 2px; border-radius: 8px;
+    }
+
+    /* 主要 KPI 區 */
+    .hero { background: var(--hero); color: var(--hero-ink); }
+    .hero .label { color: var(--hero-muted); }
+    .hero-divider { border-color: var(--hero-line); }
+    .ratio-track { height: 6px; border-radius: 999px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+    .ratio-fill { height: 100%; border-radius: 999px; background: var(--hero-good); transition: width .5s ease; }
+
+    /* 明細表格 */
+    .table-wrap { overflow: auto; max-height: 640px; }
+    table.data { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
+    table.data th, table.data td { padding: 10px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    table.data thead th {
+      position: sticky; top: 0; z-index: 2; background: var(--surface); text-align: right;
+      font-size: 12px; font-weight: 700; color: var(--muted);
+    }
+    table.data thead th.dim, table.data td.dim { text-align: left; }
+    table.data td { text-align: right; }
+    table.data th:first-child, table.data td:first-child {
+      position: sticky; left: 0; z-index: 1; background: var(--surface);
+      max-width: 280px; overflow: hidden; text-overflow: ellipsis;
+    }
+    table.data thead th:first-child { z-index: 3; }
+    table.data tbody tr:hover td { background: var(--soft); }
+    table.data tfoot td { position: sticky; bottom: 0; background: var(--soft); font-weight: 700; border-top: 1px solid var(--line); }
+    .sort-btn { display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; }
+    .sort-btn:hover { color: var(--ink); }
+    th[aria-sort="ascending"] .sort-btn, th[aria-sort="descending"] .sort-btn { color: var(--ink); }
+    .sort-ind { font-size: 10px; opacity: .35; }
+    th[aria-sort] .sort-ind { opacity: 1; }
+
+    .pf { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+    .pf::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pf, var(--muted)); }
+
+    .skeleton { background: linear-gradient(90deg, var(--soft), var(--line), var(--soft)); background-size: 200% 100%; animation: shimmer 1.4s infinite; border-radius: 8px; }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    input[type="date"] {
+      background: var(--surface); border: 1px solid var(--line); color: var(--ink);
+      border-radius: 8px; padding: 5px 8px; font-size: 13px;
+    }
+    .search {
+      background: var(--soft); border: 1px solid transparent; color: var(--ink);
+      border-radius: 8px; padding: 7px 12px; font-size: 13px; width: 100%;
+    }
+    .search:focus { background: var(--surface); border-color: var(--line); outline: none; }
+    .btn-ghost { font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+    .btn-ghost:hover { background: var(--soft); }
+
+    .no-scrollbar { scrollbar-width: none; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body class="font-sans min-h-screen">
+
+  <!-- 頂部導覽 -->
+  <header class="surface border-x-0 border-t-0" style="padding-top: env(safe-area-inset-top, 0px);">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <div id="brandMark" class="w-9 h-9 rounded-lg flex items-center justify-center text-white font-extrabold text-sm shrink-0" style="background: var(--hero);"></div>
+        <div class="min-w-0">
+          <h1 id="brandName" class="font-extrabold text-lg leading-tight truncate"></h1>
+          <p id="brandSub" class="muted text-xs"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <div class="text-right">
+          <div class="muted">資料更新至</div>
+          <div id="updatedAt" class="font-bold text-sm">—</div>
+        </div>
+        <button id="refreshBtn" class="btn-ghost" type="button" title="重新載入最新資料">重新整理</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 篩選列 -->
+  <div class="sticky top-0 z-20" style="background: var(--paper); padding-top: env(safe-area-inset-top, 0px);">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-3 pb-0">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div class="overflow-x-auto no-scrollbar max-w-full">
+          <div class="seg" id="rangeSeg" role="group" aria-label="日期區間">
+            <button type="button" data-range="today">今日</button>
+            <button type="button" data-range="7d">近 7 天</button>
+            <button type="button" data-range="30d">近 30 天</button>
+            <button type="button" data-range="month">本月</button>
+            <button type="button" data-range="custom">自訂</button>
+          </div>
+        </div>
+        <div id="customRange" class="hidden items-center gap-2 text-sm">
+          <input type="date" id="fromInput" aria-label="開始日期">
+          <span class="muted">至</span>
+          <input type="date" id="toInput" aria-label="結束日期">
+        </div>
+        <div class="seg" id="platformSeg" role="group" aria-label="渠道">
+          <button type="button" data-platform="all">全部綜合</button>
+          <button type="button" data-platform="Meta Ads">Meta Ads</button>
+          <button type="button" data-platform="Google Ads">Google Ads</button>
+        </div>
+      </div>
+      <p id="rangeLabel" class="muted text-xs mt-2"></p>
+
+      <nav class="mt-1 flex gap-6 overflow-x-auto no-scrollbar border-b hairline" role="tablist" aria-label="檢視層級" id="levelTabs"></nav>
+    </div>
+  </div>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-5">
+    <div id="notice" class="hidden rounded-xl px-4 py-3 text-sm"></div>
+
+    <!-- 主要 KPI -->
+    <section class="hero rounded-2xl overflow-hidden" aria-label="主要成效">
+      <div class="grid grid-cols-1 md:grid-cols-3">
+        <div class="p-5 sm:p-6">
+          <div class="label text-sm font-semibold">總花費</div>
+          <div id="kSpend" class="text-3xl sm:text-4xl font-extrabold mt-2 tracking-tight">—</div>
+        </div>
+        <div class="p-5 sm:p-6 border-t md:border-t-0 md:border-l hero-divider">
+          <div class="label text-sm font-semibold">總轉換價值（營收）</div>
+          <div id="kValue" class="text-3xl sm:text-4xl font-extrabold mt-2 tracking-tight">—</div>
+        </div>
+        <div class="p-5 sm:p-6 border-t md:border-t-0 md:border-l hero-divider">
+          <div class="label text-sm font-semibold">綜合 ROAS</div>
+          <div id="kRoas" class="text-5xl sm:text-6xl font-extrabold mt-1 tracking-tight leading-none">—</div>
+          <p id="roasSentence" class="label text-sm mt-3"></p>
+          <div class="ratio-track mt-2" aria-hidden="true"><div id="roasBar" class="ratio-fill" style="width:0%"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 次要 KPI -->
+    <section class="surface strip rounded-2xl grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5" aria-label="效率指標" id="kpiStrip"></section>
+
+    <!-- 圖表 -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div class="surface rounded-2xl p-5 lg:col-span-2">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 class="font-bold">每日花費與 ROAS</h2>
+          <div id="trendLegend" class="flex flex-wrap gap-4 text-xs muted"></div>
+        </div>
+        <div class="relative mt-4" style="height: 300px;">
+          <canvas id="trendChart" aria-label="每日花費與 ROAS 趨勢圖" role="img"></canvas>
+        </div>
+      </div>
+
+      <div class="surface rounded-2xl p-5">
+        <h2 class="font-bold">Meta 與 Google 佔比</h2>
+        <p class="muted text-xs mt-1">依所選日期與層級計算，不受渠道篩選影響</p>
+        <div class="grid grid-cols-2 gap-3 mt-4">
+          <div class="relative" style="height: 150px;">
+            <canvas id="shareSpend" aria-label="花費佔比" role="img"></canvas>
+            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span class="muted text-xs">花費</span>
+              <span id="shareSpendCenter" class="font-extrabold text-sm"></span>
+            </div>
+          </div>
+          <div class="relative" style="height: 150px;">
+            <canvas id="shareValue" aria-label="營收佔比" role="img"></canvas>
+            <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <span class="muted text-xs">營收</span>
+              <span id="shareValueCenter" class="font-extrabold text-sm"></span>
+            </div>
+          </div>
+        </div>
+        <div id="shareTable" class="mt-4 text-sm"></div>
+      </div>
+    </section>
+
+    <!-- 明細表格 -->
+    <section class="surface rounded-2xl overflow-hidden">
+      <div class="p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 border-b hairline">
+        <div>
+          <h2 id="tableTitle" class="font-bold">明細</h2>
+          <p id="tableHint" class="muted text-xs mt-0.5"></p>
+        </div>
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <input id="searchInput" class="search sm:w-64" type="search" placeholder="搜尋名稱" aria-label="搜尋名稱">
+          <button id="exportBtn" class="btn-ghost shrink-0" type="button">下載 CSV</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data" id="dataTable"></table>
+      </div>
+      <div id="tableMore" class="hidden p-3 text-center border-t hairline">
+        <button id="moreBtn" class="btn-ghost" type="button">顯示更多</button>
+      </div>
+    </section>
+
+    <footer class="muted text-xs text-center py-4" id="footer"></footer>
+  </main>
+
+<script>
+/* =========================================================================
+   設定區：只需要修改這裡
+   ========================================================================= */
+const CONFIG = {
+  brandName: '品牌名稱',
+  subtitle: '廣告成效報告',
+  currency: 'TWD',
+  // 可填一個或多個 CSV 網址：
+  // - 若各層級寫在不同分頁（Raw_Account / Raw_Campaign / Raw_AdGroup / Raw_Ad），
+  //   請分別「發布到網路」後，將四個 CSV 網址都填進來。
+  // - 若全部層級在同一個分頁，填一個即可。
+  // 未填入有效網址時會自動顯示示範資料。
+  csvUrls: [
+    '[請貼上你的 Google Sheets CSV 網址]',
+  ],
+  defaultRange: '7d',
+  defaultLevel: 'Account',
+  pageSize: 100,
+};
+
+/* =========================================================================
+   常數與工具
+   ========================================================================= */
+const LEVELS = [
+  { id: 'Account', label: '帳戶整體' },
+  { id: 'Campaign', label: '廣告活動' },
+  { id: 'AdGroup', label: '廣告群組' },
+  { id: 'Ad', label: '廣告' },
+];
+const PLATFORMS = ['Meta Ads', 'Google Ads'];
+const PF_VAR = { 'Meta Ads': '--meta', 'Google Ads': '--google' };
+
+const DIMS = {
+  Account: [{ key: 'date', label: '日期' }, { key: 'platform', label: '平台' }],
+  Campaign: [{ key: 'campaign', label: '廣告活動' }, { key: 'platform', label: '平台' }],
+  AdGroup: [{ key: 'adgroup', label: '廣告群組' }, { key: 'campaign', label: '廣告活動' }, { key: 'platform', label: '平台' }],
+  Ad: [{ key: 'ad', label: '廣告名稱' }, { key: 'platform', label: '平台' }],
+};
+
+const pad = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
+const diffDays = (a, b) => Math.round((parseYmd(b) - parseYmd(a)) / 864e5);
+const shortDate = s => `${s.slice(5, 7)}/${s.slice(8, 10)}`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const cssVar = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+function num(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  const n = parseFloat(String(v).replace(/[^0-9.\-eE]/g, ''));
+  return isFinite(n) ? n : 0;
+}
+function normDate(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (m) return `${m[1]}-${pad(m[2])}-${pad(m[3])}`;
+  const d = new Date(s);
+  return isNaN(d) ? '' : ymd(d);
+}
+function normLevel(v) {
+  const s = String(v || '').toLowerCase().replace(/[\s_-]/g, '');
+  if (s === 'account') return 'Account';
+  if (s === 'campaign') return 'Campaign';
+  if (s === 'adgroup' || s === 'adset') return 'AdGroup';
+  if (s === 'ad') return 'Ad';
+  return '';
+}
+function normPlatform(v) {
+  const s = String(v || '').toLowerCase();
+  if (s.includes('meta') || s.includes('facebook')) return 'Meta Ads';
+  if (s.includes('google')) return 'Google Ads';
+  return String(v || '').trim();
+}
+
+function derive(t) {
+  t.ctr = t.imp ? t.clk / t.imp : null;
+  t.cpc = t.clk ? t.spend / t.clk : null;
+  t.roas = t.spend ? t.val / t.spend : null;
+  t.cvr = t.clk ? t.conv / t.clk : null;
+  t.cpa = t.conv ? t.spend / t.conv : null;
+  return t;
+}
+function emptyTotals() { return { spend: 0, imp: 0, clk: 0, conv: 0, val: 0 }; }
+function addTo(t, r) { t.spend += r.spend; t.imp += r.imp; t.clk += r.clk; t.conv += r.conv; t.val += r.val; }
+function sumRows(rows) { const t = emptyTotals(); rows.forEach(r => addTo(t, r)); return derive(t); }
+
+const moneyFmt = {};
+function fmtMoney(v, dec = 0) {
+  if (v === null || v === undefined) return '—';
+  const k = dec;
+  moneyFmt[k] ||= new Intl.NumberFormat('zh-TW', { style: 'currency', currency: CONFIG.currency, minimumFractionDigits: dec, maximumFractionDigits: dec });
+  return moneyFmt[k].format(v);
+}
+function fmtCompactMoney(v) {
+  if (v === null || v === undefined) return '—';
+  if (Math.abs(v) >= 1e6) return fmtMoney(v / 1e6, 1) + 'M';
+  if (Math.abs(v) >= 1e4) return fmtMoney(v / 1e3, 0) + 'K';
+  return fmtMoney(v);
+}
+const fmtInt = v => v === null || v === undefined ? '—' : Math.round(v).toLocaleString('zh-TW');
+const fmtConv = v => {
+  if (v === null || v === undefined) return '—';
+  return Math.abs(v - Math.round(v)) < 0.005 ? fmtInt(v) : v.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const fmtPct = v => v === null || v === undefined ? '—' : (v * 100).toFixed(2) + '%';
+const fmtRoas = v => v === null || v === undefined ? '—' : v.toFixed(2) + 'x';
+
+const METRICS = [
+  { key: 'spend', label: '花費', fmt: v => fmtMoney(v) },
+  { key: 'imp', label: '曝光', fmt: fmtInt },
+  { key: 'clk', label: '點擊', fmt: fmtInt },
+  { key: 'ctr', label: 'CTR', fmt: fmtPct },
+  { key: 'cpc', label: 'CPC', fmt: v => fmtMoney(v, 2) },
+  { key: 'conv', label: '轉換數', fmt: fmtConv },
+  { key: 'val', label: '轉換價值', fmt: v => fmtMoney(v) },
+  { key: 'roas', label: 'ROAS', fmt: fmtRoas },
+  { key: 'cvr', label: 'CVR', fmt: fmtPct },
+  { key: 'cpa', label: 'CPA', fmt: v => fmtMoney(v, 0) },
+];
+const SECONDARY_KPIS = [
+  { key: 'conv', label: '總轉換數', fmt: fmtConv, better: 'up' },
+  { key: 'ctr', label: '平均 CTR', fmt: fmtPct, better: 'up' },
+  { key: 'cpc', label: '平均 CPC', fmt: v => fmtMoney(v, 2), better: 'down' },
+  { key: 'cvr', label: '平均 CVR', fmt: fmtPct, better: 'up' },
+  { key: 'cpa', label: '平均 CPA', fmt: v => fmtMoney(v, 0), better: 'down' },
+];
+
+/* =========================================================================
+   狀態
+   ========================================================================= */
+let DATA = [];
+let IS_DEMO = false;
+const state = {
+  range: CONFIG.defaultRange,
+  customFrom: null,
+  customTo: null,
+  platform: 'all',
+  level: CONFIG.defaultLevel,
+  sort: null,
+  search: '',
+  limit: CONFIG.pageSize,
+};
+const charts = {};
+
+/* =========================================================================
+   資料載入
+   ========================================================================= */
+function validUrls() {
+  return CONFIG.csvUrls.map(u => String(u).trim()).filter(u => /^https?:\/\//i.test(u));
+}
+
+function parseCsv(url) {
+  const busted = url + (url.includes('?') ? '&' : '?') + '_=' + Date.now();
+  return new Promise((resolve, reject) => {
+    Papa.parse(busted, {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: h => h.trim(),
+      complete: res => resolve(res.data),
+      error: err => reject(new Error(`無法讀取 ${url}：${err && err.message ? err.message : err}`)),
+    });
+  });
+}
+
+function toRow(r) {
+  const level = normLevel(r.Level);
+  const date = normDate(r.Date);
+  if (!level || !date) return null;
+  return {
+    date,
+    platform: normPlatform(r.Platform),
+    level,
+    campaign: String(r.Campaign_Name ?? 'All').trim() || '(未命名)',
+    adgroup: String(r.AdGroup_Name ?? 'All').trim() || '(未命名)',
+    ad: String(r.Ad_Name ?? 'All').trim() || '(未命名)',
+    spend: num(r.Spend),
+    imp: num(r.Impressions),
+    clk: num(r.Clicks),
+    conv: num(r.Conversions),
+    val: num(r.Conversion_Value),
+  };
+}
+
+async function loadData() {
+  const urls = validUrls();
+  if (!urls.length) {
+    IS_DEMO = true;
+    return makeDemo();
+  }
+  IS_DEMO = false;
+  const parts = await Promise.all(urls.map(parseCsv));
+  return parts.flat().map(toRow).filter(Boolean);
+}
+
+/* 示範資料：結構與同步腳本輸出一致（廣告層級已依名稱合併） */
+function makeDemo() {
+  let seed = 20261104;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+  const between = (a, b) => a + (b - a) * rnd();
+  const structure = {
+    'Meta Ads': {
+      '雙11主檔_轉換': {
+        '再行銷_加購未結帳': ['主視覺A_影片', '輪播_熱銷TOP5', '限時折扣_靜態圖'],
+        '類似受眾_購買1%': ['主視覺A_影片', '開箱短影音', '限時折扣_靜態圖'],
+      },
+      '品牌_觸及': { '廣泛_25-44歲': ['品牌故事_影片', '開箱短影音'] },
+    },
+    'Google Ads': {
+      '搜尋_品牌字': { '品牌字_完全比對': ['品牌字_RSA_1', '品牌字_RSA_2'] },
+      '搜尋_通用字': { '保養品_詞組比對': ['通用字_RSA_1'], '精華液_廣泛比對': ['通用字_RSA_1', '通用字_RSA_2'] },
+      '購物_全商品': { '全部商品': ['購物廣告_全商品'] },
+    },
+  };
+  const today = ymd(new Date());
+  const leaves = [];
+  for (let i = 59; i >= 0; i--) {
+    const date = addDays(today, -i);
+    const dow = parseYmd(date).getDay();
+    const dayFactor = (dow === 0 || dow === 6 ? 1.15 : 1) * (1 + (59 - i) / 120) * (i === 0 ? 0.45 : 1);
+    for (const [platform, camps] of Object.entries(structure)) {
+      for (const [campaign, groups] of Object.entries(camps)) {
+        for (const [adgroup, ads] of Object.entries(groups)) {
+          for (const ad of ads) {
+            const isMeta = platform === 'Meta Ads';
+            const spend = between(isMeta ? 700 : 300, isMeta ? 3200 : 2200) * dayFactor;
+            const imp = Math.round(spend * between(isMeta ? 20 : 6, isMeta ? 32 : 14));
+            const clk = Math.round(imp * between(isMeta ? 0.009 : 0.03, isMeta ? 0.02 : 0.08));
+            const conv = Math.round(clk * between(0.015, campaign.includes('品牌字') ? 0.09 : 0.045));
+            const val = Math.round(conv * between(1100, 1900));
+            leaves.push({ date, platform, campaign, adgroup, ad, spend: Math.round(spend * 100) / 100, imp, clk, conv, val });
+          }
+        }
+      }
+    }
+  }
+  const roll = (level, keyFn, dimFn) => {
+    const map = new Map();
+    for (const l of leaves) {
+      const k = keyFn(l);
+      if (!map.has(k)) map.set(k, { ...dimFn(l), level, ...emptyTotals() });
+      addTo(map.get(k), l);
+    }
+    return [...map.values()];
+  };
+  return [
+    ...roll('Account', l => `${l.date}|${l.platform}`, l => ({ date: l.date, platform: l.platform, campaign: 'All', adgroup: 'All', ad: 'All' })),
+    ...roll('Campaign', l => `${l.date}|${l.platform}|${l.campaign}`, l => ({ date: l.date, platform: l.platform, campaign: l.campaign, adgroup: 'All', ad: 'All' })),
+    ...roll('AdGroup', l => `${l.date}|${l.platform}|${l.campaign}|${l.adgroup}`, l => ({ date: l.date, platform: l.platform, campaign: l.campaign, adgroup: l.adgroup, ad: 'All' })),
+    ...roll('Ad', l => `${l.date}|${l.platform}|${l.ad}`, l => ({ date: l.date, platform: l.platform, campaign: 'All', adgroup: 'All', ad: l.ad })),
+  ];
+}
+
+/* =========================================================================
+   篩選計算
+   ========================================================================= */
+function getRange() {
+  const today = ymd(new Date());
+  switch (state.range) {
+    case 'today': return { from: today, to: today };
+    case '30d': return { from: addDays(today, -29), to: today };
+    case 'month': return { from: today.slice(0, 8) + '01', to: today };
+    case 'custom': {
+      let f = state.customFrom || addDays(today, -6);
+      let t = state.customTo || today;
+      if (f > t) [f, t] = [t, f];
+      return { from: f, to: t };
+    }
+    default: return { from: addDays(today, -6), to: today };
+  }
+}
+const platformMatch = r => state.platform === 'all' || r.platform === state.platform;
+const inRange = (r, from, to) => r.date >= from && r.date <= to;
+
+function groupKey(r, level) { return DIMS[level].map(d => r[d.key]).join('\u001f'); }
+
+function groupForTable(rows, level) {
+  const map = new Map();
+  for (const r of rows) {
+    const k = groupKey(r, level);
+    if (!map.has(k)) {
+      const g = { ...emptyTotals(), _groups: new Set() };
+      DIMS[level].forEach(d => { g[d.key] = r[d.key]; });
+      map.set(k, g);
+    }
+    const g = map.get(k);
+    addTo(g, r);
+    if (level === 'Ad' && r.adgroup !== 'All') g._groups.add(`${r.campaign}|${r.adgroup}`);
+  }
+  return [...map.values()].map(derive);
+}
+
+/* =========================================================================
+   繪製
+   ========================================================================= */
+function render() {
+  const { from, to } = getRange();
+  const len = diffDays(from, to) + 1;
+
+  const levelRows = DATA.filter(r => r.level === state.level);
+  const base = levelRows.filter(platformMatch);
+  const cur = base.filter(r => inRange(r, from, to));
+
+  document.getElementById('rangeLabel').textContent =
+    `${from} 至 ${to}（${len} 天）`;
+
+  renderLevelTabs(from, to);
+  renderKpis(sumRows(cur), cur.length > 0);
+  renderTrend(cur, from, to);
+  renderShare(levelRows.filter(r => inRange(r, from, to)));
+  renderTable(cur, from, to);
+}
+
+function renderLevelTabs(from, to) {
+  const nav = document.getElementById('levelTabs');
+  const scoped = DATA.filter(r => platformMatch(r) && inRange(r, from, to));
+  nav.innerHTML = LEVELS.map(l => {
+    const rows = scoped.filter(r => r.level === l.id);
+    const count = l.id === 'Account'
+      ? new Set(rows.map(r => r.platform)).size
+      : new Set(rows.map(r => groupKey(r, l.id))).size;
+    const unit = l.id === 'Account' ? '個平台' : '';
+    return `<button type="button" role="tab" class="level-tab" data-level="${l.id}" aria-selected="${state.level === l.id}">
+      ${l.label}<span class="count">${count}${unit}</span></button>`;
+  }).join('');
+}
+
+function renderKpis(t, hasData) {
+  document.getElementById('kSpend').textContent = hasData ? fmtMoney(t.spend) : '—';
+  document.getElementById('kValue').textContent = hasData ? fmtMoney(t.val) : '—';
+  document.getElementById('kRoas').textContent = hasData ? fmtRoas(t.roas) : '—';
+
+  const sentence = document.getElementById('roasSentence');
+  const bar = document.getElementById('roasBar');
+  if (hasData && t.roas !== null) {
+    sentence.textContent = `每投入 ${fmtMoney(1)} 廣告費，帶回 ${fmtMoney(t.roas, 2)} 營收`;
+    bar.style.width = Math.min(100, (t.roas / 10) * 100) + '%';
+  } else {
+    sentence.textContent = hasData ? '此區間沒有花費' : '此區間沒有資料';
+    bar.style.width = '0%';
+  }
+
+  document.getElementById('kpiStrip').innerHTML = SECONDARY_KPIS.map((m, i) => `
+    <div class="p-4 sm:p-5 ${i > 0 ? 'border-l hairline' : ''} ${i >= 2 ? 'border-t sm:border-t-0 hairline' : ''}">
+      <div class="muted text-xs font-semibold">${m.label}</div>
+      <div class="text-xl sm:text-2xl font-extrabold mt-1 tracking-tight">${hasData ? m.fmt(t[m.key]) : '—'}</div>
+    </div>`).join('');
+  // 修正手機兩欄時的左框線
+  document.querySelectorAll('#kpiStrip > div').forEach((el, i) => {
+    el.classList.toggle('max-sm:border-l-0', i % 2 === 0);
+  });
+}
+
+function chartBase() {
+  Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+  Chart.defaults.color = cssVar('--muted');
+  Chart.defaults.borderColor = cssVar('--line');
+  Chart.defaults.animation = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? false : { duration: 400 };
+}
+
+function renderTrend(rows, from, to) {
+  chartBase();
+  const days = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) days.push(d);
+  const byDay = new Map(days.map(d => [d, { all: emptyTotals(), 'Meta Ads': emptyTotals(), 'Google Ads': emptyTotals() }]));
+  rows.forEach(r => {
+    const b = byDay.get(r.date);
+    if (!b) return;
+    addTo(b.all, r);
+    if (b[r.platform]) addTo(b[r.platform], r);
+  });
+  const roas = days.map(d => { const t = byDay.get(d).all; return t.spend ? t.val / t.spend : null; });
+  const pfList = state.platform === 'all' ? PLATFORMS : [state.platform];
+  const datasets = pfList.map(pf => ({
+    type: 'bar',
+    label: `${pf} 花費`,
+    data: days.map(d => Math.round(byDay.get(d)[pf].spend * 100) / 100),
+    backgroundColor: cssVar(PF_VAR[pf] || '--muted'),
+    borderRadius: 4,
+    maxBarThickness: 28,
+    stack: 'spend',
+    yAxisID: 'y',
+    order: 2,
+  }));
+  datasets.push({
+    type: 'line',
+    label: 'ROAS',
+    data: roas,
+    borderColor: cssVar('--roas'),
+    backgroundColor: cssVar('--roas'),
+    borderWidth: 2.5,
+    pointRadius: days.length > 31 ? 0 : 3,
+    pointHoverRadius: 5,
+    tension: 0.3,
+    spanGaps: true,
+    yAxisID: 'y1',
+    order: 0,
+  });
+
+  document.getElementById('trendLegend').innerHTML = datasets.map(ds =>
+    `<span class="inline-flex items-center gap-1.5"><span style="width:10px;height:${ds.type === 'line' ? '3px' : '10px'};border-radius:2px;background:${ds.backgroundColor}"></span>${esc(ds.label)}</span>`
+  ).join('');
+
+  charts.trend?.destroy();
+  charts.trend = new Chart(document.getElementById('trendChart'), {
+    data: { labels: days.map(shortDate), datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => days[items[0].dataIndex],
+            label: ctx => ctx.dataset.yAxisID === 'y1'
+              ? ` ROAS：${fmtRoas(ctx.raw)}`
+              : ` ${ctx.dataset.label}：${fmtMoney(ctx.raw)}`,
+          },
+        },
+      },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 12 } },
+        y: { stacked: true, beginAtZero: true, ticks: { callback: v => fmtCompactMoney(v) } },
+        y1: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false }, ticks: { callback: v => v.toFixed(1) + 'x' } },
+      },
+    },
+  });
+}
+
+function renderShare(rows) {
+  chartBase();
+  const per = Object.fromEntries(PLATFORMS.map(p => [p, emptyTotals()]));
+  rows.forEach(r => { if (per[r.platform]) addTo(per[r.platform], r); });
+  PLATFORMS.forEach(p => derive(per[p]));
+  const totalSpend = PLATFORMS.reduce((s, p) => s + per[p].spend, 0);
+  const totalVal = PLATFORMS.reduce((s, p) => s + per[p].val, 0);
+  const colors = PLATFORMS.map(p => cssVar(PF_VAR[p]));
+  const empty = cssVar('--soft');
+
+  const make = (id, key, total) => {
+    charts[id]?.destroy();
+    const hasData = total > 0;
+    charts[id] = new Chart(document.getElementById(id), {
+      type: 'doughnut',
+      data: {
+        labels: PLATFORMS,
+        datasets: [{
+          data: hasData ? PLATFORMS.map(p => per[p][key]) : [1],
+          backgroundColor: hasData ? colors : [empty],
+          borderWidth: 0,
+          hoverOffset: 4,
+        }],
+      },
+      options: {
+        cutout: '72%',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: hasData,
+            callbacks: { label: ctx => ` ${ctx.label}：${fmtMoney(ctx.raw)}（${((ctx.raw / total) * 100).toFixed(1)}%）` },
+          },
+        },
+      },
+    });
+  };
+  make('shareSpend', 'spend', totalSpend);
+  make('shareValue', 'val', totalVal);
+  document.getElementById('shareSpendCenter').textContent = fmtCompactMoney(totalSpend);
+  document.getElementById('shareValueCenter').textContent = fmtCompactMoney(totalVal);
+
+  const share = (v, t) => (t ? ((v / t) * 100).toFixed(1) + '%' : '—');
+  document.getElementById('shareTable').innerHTML = `
+    <table class="w-full">
+      <thead><tr class="muted text-xs">
+        <th class="text-left font-semibold pb-2">平台</th>
+        <th class="text-right font-semibold pb-2">花費佔比</th>
+        <th class="text-right font-semibold pb-2">營收佔比</th>
+        <th class="text-right font-semibold pb-2">ROAS</th>
+      </tr></thead>
+      <tbody>${PLATFORMS.map(p => `
+        <tr class="border-t hairline">
+          <td class="py-2"><span class="pf" style="--pf:var(${PF_VAR[p]})">${p.replace(' Ads', '')}</span></td>
+          <td class="py-2 text-right">${share(per[p].spend, totalSpend)}</td>
+          <td class="py-2 text-right">${share(per[p].val, totalVal)}</td>
+          <td class="py-2 text-right font-bold">${fmtRoas(per[p].roas)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function defaultSort(level) {
+  return level === 'Account' ? { key: 'date', dir: 'desc' } : { key: 'spend', dir: 'desc' };
+}
+
+function sortRows(rows) {
+  const { key, dir } = state.sort;
+  const m = dir === 'asc' ? 1 : -1;
+  return rows.sort((a, b) => {
+    const va = a[key], vb = b[key];
+    const na = va === null || va === undefined, nb = vb === null || vb === undefined;
+    if (na && nb) return 0;
+    if (na) return 1;   // 無法計算的值永遠排最後
+    if (nb) return -1;
+    if (typeof va === 'string') return va.localeCompare(vb, 'zh-Hant') * m;
+    return (va - vb) * m;
+  });
+}
+
+let lastTableRows = [];
+
+function renderTable(rows, from, to) {
+  const level = state.level;
+  const dims = DIMS[level];
+  if (!state.sort) state.sort = defaultSort(level);
+
+  let grouped = groupForTable(rows, level);
+  const q = state.search.trim().toLowerCase();
+  if (q) grouped = grouped.filter(g => dims.some(d => String(g[d.key]).toLowerCase().includes(q)));
+  sortRows(grouped);
+  lastTableRows = grouped;
+
+  const levelLabel = LEVELS.find(l => l.id === level).label;
+  document.getElementById('tableTitle').textContent = `${levelLabel}明細`;
+  const hints = {
+    Account: '每日各平台成效',
+    Campaign: '依廣告活動彙總所選區間',
+    AdGroup: '依廣告群組彙總所選區間',
+    Ad: '同名廣告已跨廣告群組加總',
+  };
+  document.getElementById('tableHint').textContent = `${hints[level]}，共 ${grouped.length.toLocaleString('zh-TW')} 列`;
+
+  const ariaSort = k => state.sort.key === k ? `aria-sort="${state.sort.dir === 'asc' ? 'ascending' : 'descending'}"` : '';
+  const ind = k => state.sort.key === k ? (state.sort.dir === 'asc' ? '▲' : '▼') : '↕';
+  const head = [
+    ...dims.map(d => `<th class="dim" ${ariaSort(d.key)}><button type="button" class="sort-btn" data-sort="${d.key}">${d.label}<span class="sort-ind">${ind(d.key)}</span></button></th>`),
+    ...METRICS.map(m => `<th ${ariaSort(m.key)}><button type="button" class="sort-btn" data-sort="${m.key}">${m.label}<span class="sort-ind">${ind(m.key)}</span></button></th>`),
+  ].join('');
+
+  const cell = (g, d) => {
+    const v = g[d.key];
+    if (d.key === 'platform') return `<span class="pf" style="--pf:var(${PF_VAR[v] || '--muted'})">${esc(String(v).replace(' Ads', ''))}</span>`;
+    if (d.key === 'ad' && g._groups && g._groups.size > 1) {
+      return `${esc(v)} <span class="muted text-xs">（${g._groups.size} 個群組）</span>`;
+    }
+    return esc(v);
+  };
+
+  const visible = grouped.slice(0, state.limit);
+  const body = visible.length
+    ? visible.map(g => `<tr>
+        ${dims.map((d, i) => `<td class="dim ${i === 0 ? 'font-semibold' : ''}" title="${esc(g[d.key])}">${cell(g, d)}</td>`).join('')}
+        ${METRICS.map(m => `<td class="${m.key === 'roas' ? 'font-bold' : ''}">${m.fmt(g[m.key])}</td>`).join('')}
+      </tr>`).join('')
+    : `<tr><td class="dim" colspan="${dims.length + METRICS.length}" style="position:static;max-width:none;padding:40px 16px;text-align:center;">
+        <div class="font-semibold">此區間沒有${levelLabel}資料</div>
+        <div class="muted text-xs mt-1">請改選較長的日期區間，或切換渠道</div>
+      </td></tr>`;
+
+  const total = derive(grouped.reduce((t, g) => { addTo(t, g); return t; }, emptyTotals()));
+  const foot = grouped.length
+    ? `<tfoot><tr><td class="dim" colspan="${dims.length}">總計</td>${METRICS.map(m => `<td>${m.fmt(total[m.key])}</td>`).join('')}</tr></tfoot>`
+    : '';
+
+  document.getElementById('dataTable').innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>${foot}`;
+
+  const more = document.getElementById('tableMore');
+  more.classList.toggle('hidden', grouped.length <= state.limit);
+  document.getElementById('moreBtn').textContent = `顯示更多（還有 ${(grouped.length - state.limit).toLocaleString('zh-TW')} 列）`;
+}
+
+function exportCsv() {
+  const { from, to } = getRange();
+  const dims = DIMS[state.level];
+  const rows = lastTableRows.map(g => {
+    const o = {};
+    dims.forEach(d => { o[d.label] = g[d.key]; });
+    METRICS.forEach(m => {
+      const v = g[m.key];
+      o[m.label] = v === null || v === undefined ? '' : Math.round(v * 10000) / 10000;
+    });
+    return o;
+  });
+  const csv = '\ufeff' + Papa.unparse(rows);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `ads_${state.level}_${from}_${to}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* =========================================================================
+   UI 狀態同步
+   ========================================================================= */
+function syncControls() {
+  document.querySelectorAll('#rangeSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.range === state.range));
+  document.querySelectorAll('#platformSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.platform === state.platform));
+  const custom = document.getElementById('customRange');
+  custom.classList.toggle('hidden', state.range !== 'custom');
+  custom.classList.toggle('flex', state.range === 'custom');
+}
+
+function showNotice(html, tone) {
+  const n = document.getElementById('notice');
+  n.innerHTML = html;
+  n.className = 'rounded-xl px-4 py-3 text-sm';
+  n.style.background = 'var(--surface)';
+  n.style.border = `1px solid ${tone === 'error' ? 'var(--bad)' : 'var(--line)'}`;
+  n.style.color = 'var(--ink)';
+}
+function hideNotice() { document.getElementById('notice').className = 'hidden'; }
+
+function setLoading(on) {
+  ['kSpend', 'kValue', 'kRoas'].forEach(id => {
+    const el = document.getElementById(id);
+    if (on) el.innerHTML = '<span class="skeleton inline-block" style="width:140px;height:36px;opacity:.25"></span>';
+  });
+  document.getElementById('refreshBtn').disabled = on;
+  document.getElementById('refreshBtn').textContent = on ? '載入中…' : '重新整理';
+}
+
+async function boot() {
+  setLoading(true);
+  try {
+    DATA = await loadData();
+    const dates = DATA.map(r => r.date).sort();
+    const maxDate = dates[dates.length - 1];
+    const now = new Date();
+    document.getElementById('updatedAt').textContent = maxDate || '—';
+    document.getElementById('footer').textContent =
+      `頁面載入於 ${ymd(now)} ${pad(now.getHours())}:${pad(now.getMinutes())}，資料每日 09:00 與 18:00 自動更新`;
+
+    const fromIn = document.getElementById('fromInput');
+    const toIn = document.getElementById('toInput');
+    if (dates.length) { fromIn.min = toIn.min = dates[0]; }
+    fromIn.max = toIn.max = ymd(now);
+
+    if (IS_DEMO) {
+      showNotice('目前顯示的是<b>示範資料</b>。請在檔案中的 <code>CONFIG.csvUrls</code> 填入 Google Sheets「發布到網路」的 CSV 網址。');
+    } else if (!DATA.length) {
+      showNotice('CSV 已讀取，但沒有可辨識的資料列。請確認欄位名稱包含 Date、Platform、Level 等。', 'error');
+    } else {
+      hideNotice();
+    }
+    render();
+  } catch (err) {
+    console.error(err);
+    showNotice(`<b>無法載入資料。</b>${esc(err.message)}<br><span class="muted">請確認試算表已透過「檔案 → 共用 → 發布到網路」以 CSV 格式發布，且網址完整。</span>`, 'error');
+    ['kSpend', 'kValue', 'kRoas'].forEach(id => { document.getElementById(id).textContent = '—'; });
+  } finally {
+    setLoading(false);
+  }
+}
+
+/* =========================================================================
+   事件
+   ========================================================================= */
+document.getElementById('brandName').textContent = CONFIG.brandName;
+document.getElementById('brandSub').textContent = CONFIG.subtitle;
+document.getElementById('brandMark').textContent = CONFIG.brandName.trim().slice(0, 1) || 'A';
+document.title = `${CONFIG.brandName}｜${CONFIG.subtitle}`;
+
+document.getElementById('rangeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button[data-range]');
+  if (!b) return;
+  if (b.dataset.range === 'custom' && state.range !== 'custom') {
+    const cur = getRange();
+    state.customFrom = cur.from;
+    state.customTo = cur.to;
+    document.getElementById('fromInput').value = cur.from;
+    document.getElementById('toInput').value = cur.to;
+  }
+  state.range = b.dataset.range;
+  state.limit = CONFIG.pageSize;
+  syncControls();
+  render();
+});
+
+['fromInput', 'toInput'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    state.customFrom = document.getElementById('fromInput').value || null;
+    state.customTo = document.getElementById('toInput').value || null;
+    render();
+  });
+});
+
+document.getElementById('platformSeg').addEventListener('click', e => {
+  const b = e.target.closest('button[data-platform]');
+  if (!b) return;
+  state.platform = b.dataset.platform;
+  state.limit = CONFIG.pageSize;
+  syncControls();
+  render();
+});
+
+document.getElementById('levelTabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-level]');
+  if (!b || b.dataset.level === state.level) return;
+  state.level = b.dataset.level;
+  state.sort = defaultSort(state.level);
+  state.search = '';
+  state.limit = CONFIG.pageSize;
+  document.getElementById('searchInput').value = '';
+  render();
+});
+
+document.getElementById('dataTable').addEventListener('click', e => {
+  const b = e.target.closest('button[data-sort]');
+  if (!b) return;
+  const key = b.dataset.sort;
+  const isDim = DIMS[state.level].some(d => d.key === key);
+  if (state.sort.key === key) {
+    state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    state.sort = { key, dir: isDim && key !== 'date' ? 'asc' : 'desc' };
+  }
+  const { from, to } = getRange();
+  renderTable(DATA.filter(r => r.level === state.level && platformMatch(r) && inRange(r, from, to)), from, to);
+});
+
+let searchTimer;
+document.getElementById('searchInput').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    state.search = e.target.value;
+    state.limit = CONFIG.pageSize;
+    const { from, to } = getRange();
+    renderTable(DATA.filter(r => r.level === state.level && platformMatch(r) && inRange(r, from, to)), from, to);
+  }, 150);
+});
+
+document.getElementById('moreBtn').addEventListener('click', () => {
+  state.limit += CONFIG.pageSize;
+  const { from, to } = getRange();
+  renderTable(DATA.filter(r => r.level === state.level && platformMatch(r) && inRange(r, from, to)), from, to);
+});
+
+document.getElementById('exportBtn').addEventListener('click', exportCsv);
+document.getElementById('refreshBtn').addEventListener('click', boot);
+
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (DATA.length) render(); });
+
+syncControls();
+boot();
+</script>
+</body>
+</html>
