@@ -1,0 +1,57 @@
+name: Daily Ads Sync
+
+on:
+  schedule:
+    # GitHub Actions cron 使用 UTC；台灣時間 (UTC+8) 09:00 = 01:00 UTC，18:00 = 10:00 UTC
+    - cron: "0 1 * * *"
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "回溯天數（含今天），例如補資料時可填 30"
+        required: false
+        default: "7"
+
+# 避免排程與手動觸發同時執行造成 Sheets 寫入衝突
+concurrency:
+  group: ads-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run sync
+        env:
+          # Google Sheets
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          # Meta Ads
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+          META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
+          # Google Ads
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+          GOOGLE_ADS_CUSTOMER_IDS: ${{ secrets.GOOGLE_ADS_CUSTOMER_IDS }}
+          # 選用設定
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
+          REPORT_TIMEZONE: Asia/Taipei
+          AD_MERGE_SCOPE: global
+        run: python sync_data.py
