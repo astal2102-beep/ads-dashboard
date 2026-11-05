@@ -8,7 +8,7 @@ on:
       lookback_days:
         description: '回溯天數（含今天），例如補資料時可填 30'
         required: true
-        default: '7'
+        default: '30'
 
 jobs:
   sync:
@@ -28,13 +28,15 @@ jobs:
 
       - name: Run sync script
         env:
-          GA_CLIENT_ID: ${{ secrets.GA_CLIENT_ID }}
-          GA_CLIENT_SECRET: ${{ secrets.GA_CLIENT_SECRET }}
-          GA_DEVELOPER_TOKEN: ${{ secrets.GA_DEVELOPER_TOKEN }}
-          GA_REFRESH_TOKEN: ${{ secrets.GA_REFRESH_TOKEN }}
-          GA_LOGIN_CUSTOMER_ID: ${{ secrets.GA_LOGIN_CUSTOMER_ID }}
+          GOOGLE_ADS_DEVELOPER_TOKEN: ${{ secrets.GOOGLE_ADS_DEVELOPER_TOKEN }}
+          GOOGLE_ADS_CLIENT_ID: ${{ secrets.GOOGLE_ADS_CLIENT_ID }}
+          GOOGLE_ADS_CLIENT_SECRET: ${{ secrets.GOOGLE_ADS_CLIENT_SECRET }}
+          GOOGLE_ADS_REFRESH_TOKEN: ${{ secrets.GOOGLE_ADS_REFRESH_TOKEN }}
+          GOOGLE_ADS_LOGIN_CUSTOMER_ID: ${{ secrets.GOOGLE_ADS_LOGIN_CUSTOMER_ID }}
+          GOOGLE_ADS_CUSTOMER_IDS: ${{ secrets.GOOGLE_ADS_CUSTOMER_IDS }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
-          META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          META_AD_ACCOUNT_IDS: ${{ secrets.META_AD_ACCOUNT_IDS }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
         run: |
-          python sync_data.py --days ${{ github.event.inputs.lookback_days || 7 }}
+          python sync_data.py --days ${{ github.event.inputs.lookback_days || 30 }}
