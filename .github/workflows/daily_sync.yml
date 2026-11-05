@@ -35,5 +35,6 @@ jobs:
           GA_LOGIN_CUSTOMER_ID: ${{ secrets.GA_LOGIN_CUSTOMER_ID }}
           META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
           META_AD_ACCOUNT_ID: ${{ secrets.META_AD_ACCOUNT_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         run: |
           python sync_data.py --days ${{ github.event.inputs.lookback_days || 7 }}
